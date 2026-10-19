@@ -37,6 +37,14 @@ lares pi              # pi, in this directory, inside the sandbox
 A repository has to be mounted before it can be entered; `lares` says so and
 refuses to open a tool in a directory the container cannot see.
 
+## The workspace
+
+coi mounts a workspace at `/workspace` in every container of its own, so the
+sandbox has one even though it is entered from the repositories instead. It is
+`~/.local/state/lares/workspace`: a neutral directory holding coi's protection
+files and pi's session history, which is what `lares uninstall --purge` removes
+and what a plain `lares uninstall` keeps.
+
 ## The clipboard
 
 A container has no display server, so pi cannot run `wl-copy` or `xclip`: it

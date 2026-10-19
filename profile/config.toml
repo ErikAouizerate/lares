@@ -4,9 +4,12 @@
 #   lares pi      pi in the current repo
 #   lares bash    a shell in the current repo
 #
-# The workspace is a fixed neutral directory (~/lares-workspace) so the container
-# identity never changes; the repos are extra mounts, mirrored at their host
-# path so the working directory exists unchanged inside the container.
+# The workspace is a neutral directory of our own (~/.local/state/lares/workspace),
+# because coi mounts one at /workspace in every container and writes its
+# protection files and pi's session history there. It is not what identifies the
+# container: session_name is. The repositories are extra mounts, mirrored at
+# their host path so the working directory exists unchanged inside the
+# container.
 
 [container]
 image = "coi-lares"

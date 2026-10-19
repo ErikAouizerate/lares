@@ -56,16 +56,20 @@ func installedProfile() (string, error) {
 	return config, nil
 }
 
-// workspacePath returns the host directory mounted as the workspace of the
-// sandbox. It is a fixed, neutral directory so that the identity of the
-// container never depends on the repository it is entered from.
+// workspacePath returns the host directory coi mounts at /workspace in the
+// sandbox. Every coi container has one, and none of the repositories lares
+// mounts takes that place: the workspace is where coi writes pi's session
+// history and its own protection files, so it holds no repository of ours.
+//
+// It sits under the state directory rather than in the home directory
+// because that history is worth keeping across runs.
 func workspacePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Join(home, sandboxName+"-workspace"), nil
+	return filepath.Join(home, ".local", "state", sandboxName, "workspace"), nil
 }
 
 func newInstallCmd() *cobra.Command {
