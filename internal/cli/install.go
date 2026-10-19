@@ -132,7 +132,7 @@ func installProfile(force bool) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "lares: installed the profile %q in %s\n", sandboxName, dir)
-	fmt.Fprintf(os.Stderr, "  its image is built with: coi build --profile %s\n", sandboxName)
+	fmt.Fprintf(os.Stderr, "  its image is built with: lares build\n")
 
 	return nil
 }

@@ -59,12 +59,14 @@ container, and runs the tool in it.
   lares pi           pi in the current directory
   lares bash         a shell in the current directory
   lares herdr        herdr in the current directory
+  lares run          a command in the current directory
 
   lares install      install the sandbox profile
+  lares build        build the image the sandbox is made from
   lares init         create the sandbox without entering it
   lares start        start the sandbox
   lares stop         stop the sandbox, keeping its state
-  lares status       show the sandbox
+  lares list         list the sandbox, as coi list does
   lares mount        mount a host directory in the sandbox
   lares unmount      unmount a host directory from the sandbox
   lares uninstall    remove the sandbox and the lares binary
@@ -77,12 +79,14 @@ container, and runs the tool in it.
 		newPiCmd(),
 		newBashCmd(),
 		newHerdrCmd(),
+		newRunCmd(),
 		newInstallCmd(),
+		newBuildCmd(),
 		newUninstallCmd(),
 		newInitCmd(),
 		newStartCmd(),
 		newStopCmd(),
-		newStatusCmd(),
+		newListCmd(),
 		newMountCmd(),
 		newUnmountCmd(),
 	)

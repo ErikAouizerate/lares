@@ -83,6 +83,45 @@ func newHerdrCmd() *cobra.Command {
 	}
 }
 
+// newRunCmd runs any command in the sandbox, the way `coi run -- <command>`
+// does. The commands lares knows about (pi, bash, herdr) prepare the sandbox
+// for their tool; this one only enters it.
+func newRunCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                   "run [--] command [args...]",
+		Short:                 "Run a command in the current directory",
+		DisableFlagParsing:    true,
+		DisableFlagsInUseLine: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Every flag is the command's, so --help has to be recognised here
+			// rather than meaning "run a command called --help".
+			if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
+				return cmd.Help()
+			}
+
+			args = withoutSeparator(args)
+
+			if len(args) == 0 {
+				return fmt.Errorf("no command given")
+			}
+
+			return runCommand(args)
+		},
+	}
+
+	return cmd
+}
+
+// withoutSeparator drops the `--` separating the command from the flags, which
+// `coi run` also accepts.
+func withoutSeparator(args []string) []string {
+	if len(args) > 0 && args[0] == "--" {
+		return args[1:]
+	}
+
+	return args
+}
+
 func newStartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
@@ -123,15 +162,49 @@ func newStopCmd() *cobra.Command {
 	}
 }
 
-func newStatusCmd() *cobra.Command {
+func newListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "status",
-		Short: "Show the sandbox",
+		Use:   "list",
+		Short: "List the sandbox, as coi list does",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return coi.Show("list")
 		},
 	}
+}
+
+// newBuildCmd builds the image the sandbox is made from, which is where the
+// provisioning script runs.
+func newBuildCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "build",
+		Short: "Build the image the sandbox is made from",
+		Long: `Build the image the sandbox is made from, as ` + "`coi build --profile " + sandboxName + "`" + ` does.
+
+The image is built from the installed profile and its provisioning script, so
+installing the profile comes first. Rebuilding takes minutes: coi reuses the
+image it already has unless --force is given.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if _, err := installedProfile(); err != nil {
+				return err
+			}
+
+			args := []string{"build", "--profile", sandboxName}
+
+			if force {
+				args = append(args, "--force")
+			}
+
+			return coi.Show(args...)
+		},
+	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "build the image again even when it is already there")
+
+	return cmd
 }
 
 func newInitCmd() *cobra.Command {
@@ -206,19 +279,11 @@ func directoryArg(args []string) string {
 	return args[0]
 }
 
-// enter starts the tool in the container, in the current directory.
+// enter starts the tool in the container, in the current directory, with the
+// sandbox prepared for it.
 func enter(argv []string) error {
-	container, err := sandbox()
+	container, cwd, err := enterable()
 	if err != nil {
-		return err
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	if err := requireMounted(container.Name, cwd); err != nil {
 		return err
 	}
 
@@ -226,7 +291,44 @@ func enter(argv []string) error {
 	linkPiExtras(container.Name)
 	syncPiConfig(container.Name)
 
-	code, err := ttyproxy.Run(append(attachArgs(container.Name, cwd), argv...))
+	return runIn(container.Name, cwd, argv)
+}
+
+// runCommand runs a command in the container, in the current directory,
+// without preparing the sandbox for a tool.
+func runCommand(argv []string) error {
+	container, cwd, err := enterable()
+	if err != nil {
+		return err
+	}
+
+	return runIn(container.Name, cwd, argv)
+}
+
+// enterable returns the running container and the current directory, having
+// checked that the container can see it.
+func enterable() (coi.Container, string, error) {
+	container, err := sandbox()
+	if err != nil {
+		return coi.Container{}, "", err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return coi.Container{}, "", err
+	}
+
+	if err := requireMounted(container.Name, cwd); err != nil {
+		return coi.Container{}, "", err
+	}
+
+	return container, cwd, nil
+}
+
+// runIn runs argv in the container, in dir, and reports the status of the
+// command rather than one of its own.
+func runIn(name, dir string, argv []string) error {
+	code, err := ttyproxy.Run(append(attachArgs(name, dir), argv...))
 	if err != nil {
 		return err
 	}
@@ -283,7 +385,7 @@ func create() (coi.Container, error) {
 	fmt.Fprintf(os.Stderr, "lares: creating the sandbox — a shell opens inside it, type 'exit' when it is ready\n")
 
 	if err := coi.Shell(workspace, "--profile", sandboxName, "-w", workspace, "--debug"); err != nil {
-		return coi.Container{}, fmt.Errorf("creating the sandbox: %w\n  its image is built with: coi build --profile %s", err, sandboxName)
+		return coi.Container{}, fmt.Errorf("creating the sandbox: %w\n  its image is built with: lares build", err)
 	}
 
 	container, err := coi.Find(sandboxName)

@@ -11,7 +11,7 @@ host session.
 
 ```sh
 make install          # lares in ~/.local/bin, profile in ~/.coi/profiles/lares
-coi build --profile lares
+lares build           # build the image the sandbox is made from
 lares init            # create the container, once
 
 cd ~/some/repo
@@ -26,10 +26,12 @@ lares pi              # pi, in this directory, inside the sandbox
 | `lares pi [args…]` | pi in the current directory |
 | `lares bash [args…]` | a login shell in the current directory |
 | `lares herdr [args…]` | herdr in the current directory |
+| `lares run [--] <cmd>` | any command in the current directory, as `coi run` does |
 | `lares install [--force]` | install the coi profile, from the files embedded in the binary |
+| `lares build [--force]` | build the image the sandbox is made from |
 | `lares init` | create the container without entering it |
 | `lares start` / `stop` | start the container, stop it keeping its state |
-| `lares status` | `coi list` |
+| `lares list` | `coi list` |
 | `lares mount [<dir>]` | declare a host directory in the profile and mount it now (the current one by default) |
 | `lares unmount [<dir>]` | remove a host directory from the profile and unmount it now (the current one by default) |
 | `lares uninstall [--purge]` | remove the sandbox, the profile and the binary |
