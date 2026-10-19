@@ -1,0 +1,64 @@
+# Single persistent sandbox "lares".
+#
+# One container, entered from any repo with the `lares` command:
+#   lares pi      pi in the current repo
+#   lares bash    a shell in the current repo
+#
+# The workspace is a fixed neutral directory (~/lares-workspace) so the container
+# identity never changes; the repos are extra mounts, mirrored at their host
+# path so the working directory exists unchanged inside the container.
+
+[container]
+image = "coi-lares"
+persistent = true
+session_name = "lares"
+alias = "lares"
+docker = true
+
+[container.build]
+base = "coi-default"
+script = "provision.sh"
+agents = ["pi"]
+
+[tool]
+name = "pi"
+permission_mode = "bypass"
+
+[shell]
+use_tmux = false
+
+# ---------------------------------------------------------------------------
+# Repos
+# ---------------------------------------------------------------------------
+
+[[mounts.default]]
+host = "/home/riko/light-workspace"
+container = "/home/riko/light-workspace"
+
+# ---------------------------------------------------------------------------
+# herdr (host binary, mounted read-only so it follows host updates)
+# ---------------------------------------------------------------------------
+
+[[mounts.default]]
+host = "/home/riko/.local/bin/herdr"
+container = "/usr/local/bin/herdr"
+readonly = true
+
+# ---------------------------------------------------------------------------
+# pi extras (host config, read-only)
+# ---------------------------------------------------------------------------
+
+[[mounts.default]]
+host = "/home/riko/.agents"
+container = "/home/code/.agents"
+readonly = true
+
+[[mounts.default]]
+host = "/home/riko/.pi/agent/extensions"
+container = "/opt/pi/extensions"
+readonly = true
+
+[[mounts.default]]
+host = "/home/riko/.pi/agent/mcp-adapter.json"
+container = "/opt/pi/mcp-adapter.json"
+readonly = true
