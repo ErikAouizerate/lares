@@ -15,7 +15,6 @@ lares build           # build the image the sandbox is made from
 lares init            # create the container, once
 
 cd ~/some/repo
-lares mount           # mount this repository in the sandbox
 lares pi              # pi, in this directory, inside the sandbox
 ```
 
@@ -36,8 +35,9 @@ lares pi              # pi, in this directory, inside the sandbox
 | `lares unmount [<dir>]` | remove a host directory from the profile and unmount it now (the current one by default) |
 | `lares uninstall [--purge]` | remove the sandbox, the profile and the binary |
 
-A repository has to be mounted before it can be entered; `lares` says so and
-refuses to open a tool in a directory the container cannot see.
+A repository is mounted when lares is run from it: a directory the container
+cannot see is declared in the profile and mounted on the spot, so entering one
+needs no separate command and it comes back with the next container.
 
 ## The workspace
 

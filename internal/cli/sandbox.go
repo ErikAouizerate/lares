@@ -305,8 +305,8 @@ func runCommand(argv []string) error {
 	return runIn(container.Name, cwd, argv)
 }
 
-// enterable returns the running container and the current directory, having
-// checked that the container can see it.
+// enterable returns the running container and the current directory, mounting
+// the directory in the sandbox when it cannot see it yet.
 func enterable() (coi.Container, string, error) {
 	container, err := sandbox()
 	if err != nil {
@@ -318,7 +318,7 @@ func enterable() (coi.Container, string, error) {
 		return coi.Container{}, "", err
 	}
 
-	if err := requireMounted(container.Name, cwd); err != nil {
+	if err := ensureMounted(container.Name, cwd); err != nil {
 		return coi.Container{}, "", err
 	}
 
@@ -413,9 +413,11 @@ func attachArgs(name, dir string) []string {
 	}
 }
 
-// requireMounted refuses to enter a directory the container cannot see, rather
-// than opening a tool in a directory that does not exist inside.
-func requireMounted(name, dir string) error {
+// ensureMounted mounts a directory the container cannot see, the way `lares
+// mount` does, so that entering a repository does not need that command first.
+// The declaration outlives the run: the directory comes back with the next
+// container.
+func ensureMounted(name, dir string) error {
 	mounted, err := isMounted(name, dir)
 	if err != nil {
 		return err
@@ -425,16 +427,7 @@ func requireMounted(name, dir string) error {
 		return nil
 	}
 
-	config, err := profileConfigPath()
-	if err != nil {
-		return err
-	}
-
-	return fmt.Errorf(`%s is not mounted in the sandbox
-
-  lares mount %s
-
-declares it in %s and mounts it right away`, dir, dir, config)
+	return mountDirectory(dir)
 }
 
 // isMounted reports whether dir is one of the host paths mounted in the
