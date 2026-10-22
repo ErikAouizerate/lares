@@ -105,10 +105,39 @@ func installProfile(force bool) error {
 	config := filepath.Join(dir, "config.toml")
 	script := filepath.Join(dir, "provision.sh")
 
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	// The secrets are the one file in the profile lares never overwrites: they
+	// are sandbox-specific values the user provides, not part of the profile.
+	created, err := installSecrets(dir)
+	if err != nil {
+		return err
+	}
+
+	if created {
+		fmt.Fprintf(os.Stderr, "lares: created %s; fill it with credentials dedicated to the sandbox\n", filepath.Join(dir, secretsFileName))
+	}
+
 	// An installed profile is left alone: it carries the directories mounted with
 	// `lares mount`, which a reinstall would drop. Installing has to stay
 	// repeatable, because the binary is updated far more often than the profile.
 	if _, err := os.Stat(config); err == nil && !force {
+		// Older profiles mounted the host mcp-adapter.json read-only. lares now
+		// pushes the rendered file next to pi's other configuration, so drop that
+		// one mount without touching the directories added with `lares mount`.
+		if home, err := os.UserHomeDir(); err == nil {
+			removed, err := undeclareMount(config, filepath.Join(home, piAgentDir, "mcp-adapter.json"))
+			if err != nil {
+				return err
+			}
+
+			if removed {
+				fmt.Fprintf(os.Stderr, "lares: removed the obsolete mcp-adapter.json mount from %s\n", config)
+			}
+		}
+
 		if same, _ := carriesThisProfile(config, script); same {
 			fmt.Fprintf(os.Stderr, "lares: the profile %q is already installed in %s\n", sandboxName, config)
 		} else {
@@ -117,10 +146,6 @@ func installProfile(force bool) error {
 		}
 
 		return nil
-	}
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
 	}
 
 	if err := os.WriteFile(config, lares.Config, 0o644); err != nil {

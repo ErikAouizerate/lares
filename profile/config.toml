@@ -60,8 +60,3 @@ readonly = true
 host = "/home/riko/.pi/agent/extensions"
 container = "/opt/pi/extensions"
 readonly = true
-
-[[mounts.default]]
-host = "/home/riko/.pi/agent/mcp-adapter.json"
-container = "/opt/pi/mcp-adapter.json"
-readonly = true

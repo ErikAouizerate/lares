@@ -25,10 +25,12 @@ const dotsHome = "/home/riko/light-workspace/dots/home"
 // container.
 const piAgentDir = ".pi/agent"
 
-// piConfigFiles are the host files copied into the container before pi starts.
-// The container home is not a mount, so the files have to be pushed on every
-// run to follow a change made on the host.
-var piConfigFiles = []string{"auth.json", "settings.json", "AGENTS.md", "models.json"}
+// piConfigFiles are the host files copied into the container when the sandbox
+// is entered. The container home is not a mount, so the files have to be pushed
+// on every run to follow a change made on the host. The credentials (auth.json,
+// mcp-adapter.json, web-search.json) are rendered separately: they call
+// lares-token instead of carrying the secrets themselves.
+var piConfigFiles = []string{"settings.json", "AGENTS.md", "models.json"}
 
 // linkScript links the dotfiles into the container home. A file that is not a
 // symlink to the host is moved aside once, so that the host version wins
@@ -83,9 +85,8 @@ func newHerdrCmd() *cobra.Command {
 	}
 }
 
-// newRunCmd runs any command in the sandbox, the way `coi run -- <command>`
-// does. The commands lares knows about (pi, bash, herdr) prepare the sandbox
-// for their tool; this one only enters it.
+// newRunCmd runs any command in the prepared sandbox. It goes through the same
+// entry point as pi, bash and herdr, so `lares run -- pi` works like `lares pi`.
 func newRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                   "run [--] command [args...]",
@@ -105,7 +106,7 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("no command given")
 			}
 
-			return runCommand(args)
+			return enter(args)
 		},
 	}
 
@@ -279,30 +280,29 @@ func directoryArg(args []string) string {
 	return args[0]
 }
 
-// enter starts the tool in the container, in the current directory, with the
-// sandbox prepared for it.
+// enter runs a command in the container, in the current directory, after
+// preparing the sandbox. It is the single entry point behind pi, bash, herdr
+// and run, so every command sees the same prepared sandbox.
 func enter(argv []string) error {
 	container, cwd, err := enterable()
 	if err != nil {
 		return err
 	}
 
-	linkDotfiles(container.Name)
-	linkPiExtras(container.Name)
-	syncPiConfig(container.Name)
+	prepare(container.Name)
 
 	return runIn(container.Name, cwd, argv)
 }
 
-// runCommand runs a command in the container, in the current directory,
-// without preparing the sandbox for a tool.
-func runCommand(argv []string) error {
-	container, cwd, err := enterable()
-	if err != nil {
-		return err
-	}
-
-	return runIn(container.Name, cwd, argv)
+// prepare makes the sandbox ready for any tool: the dotfiles, the pi mounts,
+// the secrets and the configuration pi reads. Every entry prepares the same
+// way, so `lares bash` followed by `pi` or `herdr` works like `lares pi`.
+func prepare(name string) {
+	linkDotfiles(name)
+	linkPiExtras(name)
+	syncSandboxSecrets(name)
+	syncPiConfig(name)
+	syncPiCredentials(name)
 }
 
 // enterable returns the running container and the current directory, mounting
@@ -467,6 +467,9 @@ func linkDotfiles(name string) {
 // piLinkScript links the read-only pi mounts back into the agent directory.
 // They are mounted outside it because coi chowns ~/.pi/agent recursively at
 // setup, which fails on a read-only mount placed inside it.
+//
+// mcp-adapter.json is not linked: lares pushes the rendered file, whose
+// credentials are resolved through lares-token.
 const piLinkScript = `
 set -e
 dir=/home/code/.pi/agent
@@ -480,7 +483,6 @@ link() {
   chown -h code:code "$link_path"
 }
 link /opt/pi/extensions "$dir/extensions"
-link /opt/pi/mcp-adapter.json "$dir/mcp-adapter.json"
 `
 
 // linkPiExtras wires the pi files the profile mounts under /opt into the agent
@@ -493,8 +495,8 @@ func linkPiExtras(name string) {
 
 // syncPiConfig copies pi's configuration from the host into the container, so
 // that a change made outside the sandbox is picked up without recreating it.
-// The credentials are copied too: there is no relay, the sandbox talks to the
-// providers directly with the host credential.
+// The credentials are not copied here: syncPiCredentials renders them so pi
+// resolves them through lares-token.
 func syncPiConfig(name string) {
 	home, err := os.UserHomeDir()
 	if err != nil {

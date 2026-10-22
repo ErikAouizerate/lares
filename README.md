@@ -18,14 +18,18 @@ cd ~/some/repo
 lares pi              # pi, in this directory, inside the sandbox
 ```
 
+`make install` creates `~/.coi/profiles/lares/secrets.env` with empty values.
+Fill it with the credentials the sandbox should use before the first
+`lares pi`; see [Secrets](#secrets).
+
 ## Commands
 
 | command | what it does |
 | --- | --- |
-| `lares pi [args…]` | pi in the current directory |
-| `lares bash [args…]` | a login shell in the current directory |
+| `lares pi [args…]` | pi in the current directory (a shortcut for entering and running pi) |
+| `lares bash [args…]` | a login shell in the current directory, prepared like `lares pi` |
 | `lares herdr [args…]` | herdr in the current directory |
-| `lares run [--] <cmd>` | any command in the current directory, as `coi run` does |
+| `lares run [--] <cmd>` | any command in the current directory, in the same prepared sandbox |
 | `lares install [--force]` | install the coi profile, from the files embedded in the binary |
 | `lares build [--force]` | build the image the sandbox is made from |
 | `lares init` | create the container without entering it |
@@ -66,6 +70,51 @@ The command keeps a real terminal rather than a pipe because incus, underneath
 coi, reads the terminal size from its standard output and drops the session on
 `SIGWINCH` when there is none to ask.
 
+## Secrets
+
+`~/.coi/profiles/lares/secrets.env` is the single place holding the sandbox's
+credentials. It is shell syntax (`KEY=VALUE` lines) and mode 0600. `lares
+install` creates it with empty values; fill it with credentials dedicated to
+the sandbox, not the host ones. Anything in it is copied into the sandbox, so
+keep host-only secrets out of it.
+
+When lares starts a tool, it copies the file to `~/.config/lares/secrets`
+(0600) and pushes a small `/usr/local/bin/lares-token` helper into the
+container. `pi` and `herdr` additionally get the rendered files below, which
+call the helper instead of carrying the values:
+
+| file | what it resolves |
+| --- | --- |
+| `~/.pi/agent/auth.json` | every `api_key` provider |
+| `~/.pi/agent/mcp-adapter.json` | the tokens named in its `Bearer ${VAR}` headers |
+| `~/.pi/agent/web-search.json` | the Tavily API key |
+
+`lares-token VARIABLE` prints one value from the file; there is no list of
+known names to keep in sync. An MCP `Bearer ${CONTEXT7_KEY}` header is resolved
+from `CONTEXT7_KEY` directly, and every `api_key` provider in `auth.json` is
+resolved from the provider name uppercased with `-` replaced by `_`
+(`opencode-go` → `OPENCODE_GO`). OAuth entries are left alone.
+
+The tokens never sit in the container environment, and the shell commands pi
+runs do not inherit them. They are read from the file when pi needs them, so a
+rotation is picked up the next time the sandbox is entered, without rebuilding
+anything. The `opencode-go` key comes from `OPENCODE_GO` in `secrets.env`, not
+from the host `auth.json`: the sandbox can use a different provider key.
+
+Every entry prepares the sandbox the same way: `lares bash` gets the secrets,
+the helper and pi's rendered configuration, so running `pi` or `herdr` inside it
+works just like `lares pi`. `lares pi` is only a shortcut for entering and
+running pi.
+
+`lares uninstall` removes the profile but keeps `secrets.env`, so a reinstall
+starts from the same sandbox credentials.
+
+This centralizes the secrets and avoids accidental leaks (environment dumps,
+child processes, logs). It is **not** a security boundary: the sandbox user has
+passwordless sudo, so an agent that decides to read the file can. To keep a
+token out of the container entirely, put a proxy on the host and point the tool
+at it.
+
 ## Requirements
 
 - `coi` in `PATH`, and `incus` for reading container devices and networks.
@@ -80,5 +129,5 @@ internal/coi       calls to coi and incus
 internal/ttyproxy  the terminal proxy: PTY, raw mode, resizes
 internal/osc52     the OSC 52 filter
 internal/clipboard the host clipboard
-profile/           the coi profile and its provisioning script, embedded
+profile/           the coi profile, its provisioning script, and lares-token
 ```

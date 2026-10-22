@@ -63,11 +63,32 @@ func uninstall(purge bool) error {
 		return err
 	}
 
+	// The secrets file holds values the user provided for the sandbox, not
+	// lares-generated configuration. Keep it so a reinstall starts from the same
+	// credentials; everything else in the profile goes.
+	secrets := filepath.Join(dir, secretsFileName)
+	body, secretsErr := os.ReadFile(secrets)
+	if secretsErr != nil && !errors.Is(secretsErr, os.ErrNotExist) {
+		return secretsErr
+	}
+
 	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "lares: removed the profile %s\n", dir)
+	if secretsErr == nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(secrets, body, 0o600); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "lares: removed the profile %s, kept %s\n", dir, secrets)
+	} else {
+		fmt.Fprintf(os.Stderr, "lares: removed the profile %s\n", dir)
+	}
 
 	if purge {
 		workspace, err := workspacePath()

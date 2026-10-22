@@ -1,0 +1,40 @@
+#!/bin/sh
+# lares-token prints one secret from the sandbox secrets file.
+#
+# pi runs it through its `!command` credential sources (auth.json,
+# mcp-adapter.json, web-search.json), so a value is read when the credential is
+# used instead of sitting in the process environment. lares writes the file
+# from ~/.coi/profiles/lares/secrets.env on the host, with mode 0600.
+#
+# The argument is the variable name to print: lares-token CONTEXT7_KEY. There is
+# no list of known names to keep in sync with the file.
+set -eu
+
+file=${LARES_SECRETS:-/home/code/.config/lares/secrets}
+key=${1:-}
+
+case $key in
+'' | *[!A-Za-z0-9_]* | [0-9]*)
+	echo "usage: lares-token VARIABLE" >&2
+	exit 2
+	;;
+esac
+
+if [ ! -r "$file" ]; then
+	echo "lares-token: cannot read $file" >&2
+	exit 1
+fi
+
+# The file is the sandbox secrets file, which is shell syntax (KEY=VALUE lines
+# and comments). Sourcing it keeps one format for the host and the sandbox.
+# shellcheck disable=SC1090
+. "$file"
+
+eval "value=\${$key:-}"
+
+if [ -z "$value" ]; then
+	echo "lares-token: $key is not set in $file" >&2
+	exit 1
+fi
+
+printf '%s' "$value"

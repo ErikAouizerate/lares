@@ -19,3 +19,10 @@ var Config []byte
 //
 //go:embed profile/provision.sh
 var Provision []byte
+
+// TokenHelper is the script pi runs to read one secret from the sandbox
+// secrets file. lares pushes it into the container so the credentials pi reads
+// can be resolved at use time instead of being copied into its environment.
+//
+//go:embed profile/lares-token
+var TokenHelper []byte
