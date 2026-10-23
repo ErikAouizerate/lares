@@ -14,20 +14,20 @@ image = "coi-lares"
 # ---------------------------------------------------------------------------
 
 [[mounts.default]]
-host = "/home/riko/light-workspace"
-container = "/home/riko/light-workspace"
+host = "/home/agent/light-workspace"
+container = "/home/agent/light-workspace"
 
 [[mounts.default]]
-host = "/home/riko/some/repo"
-container = "/home/riko/some/repo"
+host = "/home/agent/some/repo"
+container = "/home/agent/some/repo"
 
 # ---------------------------------------------------------------------------
 # pi extras
 # ---------------------------------------------------------------------------
 
 [[mounts.default]]
-host = "/home/riko/.agents"
-container = "/home/code/.agents"
+host = "/home/agent/.agents"
+container = "/home/lares/.agents"
 readonly = true
 `
 
@@ -46,7 +46,7 @@ func writeProfile(t *testing.T, body string) string {
 func TestUndeclareMountRemovesOnlyTheTable(t *testing.T) {
 	config := writeProfile(t, profileFixture)
 
-	removed, err := undeclareMount(config, "/home/riko/some/repo")
+	removed, err := undeclareMount(config, "/home/agent/some/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,16 +69,16 @@ image = "coi-lares"
 # ---------------------------------------------------------------------------
 
 [[mounts.default]]
-host = "/home/riko/light-workspace"
-container = "/home/riko/light-workspace"
+host = "/home/agent/light-workspace"
+container = "/home/agent/light-workspace"
 
 # ---------------------------------------------------------------------------
 # pi extras
 # ---------------------------------------------------------------------------
 
 [[mounts.default]]
-host = "/home/riko/.agents"
-container = "/home/code/.agents"
+host = "/home/agent/.agents"
+container = "/home/lares/.agents"
 readonly = true
 `
 
@@ -90,7 +90,7 @@ readonly = true
 func TestUndeclareMountLeavesAnUndeclaredProfileAlone(t *testing.T) {
 	config := writeProfile(t, profileFixture)
 
-	removed, err := undeclareMount(config, "/home/riko/nowhere")
+	removed, err := undeclareMount(config, "/home/agent/nowhere")
 	if err != nil {
 		t.Fatal(err)
 	}

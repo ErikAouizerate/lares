@@ -10,7 +10,9 @@
 # no list of known names to keep in sync with the file.
 set -eu
 
-file=${LARES_SECRETS:-/home/code/.config/lares/secrets}
+# The sandbox user's home, so that renaming it does not leave this script
+# reading the old path.
+file=${LARES_SECRETS:-"${HOME:-/home/lares}/.config/lares/secrets"}
 key=${1:-}
 
 case $key in

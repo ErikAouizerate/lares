@@ -7,9 +7,13 @@
 # The workspace is a neutral directory of our own (~/.local/state/lares/workspace),
 # because coi mounts one at /workspace in every container and writes its
 # protection files and pi's session history there. It is not what identifies the
-# container: session_name is. The repositories are extra mounts, mirrored at
-# their host path so the working directory exists unchanged inside the
-# container.
+# container: session_name is.
+#
+# No host path is declared here, so that this profile installs itself on any
+# machine. `lares install` writes this file again on every install: it adds the
+# extras this machine has (the herdr binary, pi's skills and extensions) and
+# keeps the repositories added with `lares mount`, each mirrored at its host path
+# so the working directory exists unchanged inside the container.
 
 [container]
 image = "coi-lares"
@@ -23,40 +27,15 @@ base = "coi-default"
 script = "provision.sh"
 agents = ["pi"]
 
+# The image names the container user "lares" (provision.sh renames coi's
+# "code"), so coi has to be told: it is the user every command runs as, and the
+# home its files live in.
+[incus]
+code_user = "lares"
+
 [tool]
 name = "pi"
 permission_mode = "bypass"
 
 [shell]
 use_tmux = false
-
-# ---------------------------------------------------------------------------
-# Repos
-# ---------------------------------------------------------------------------
-
-[[mounts.default]]
-host = "/home/riko/light-workspace"
-container = "/home/riko/light-workspace"
-
-# ---------------------------------------------------------------------------
-# herdr (host binary, mounted read-only so it follows host updates)
-# ---------------------------------------------------------------------------
-
-[[mounts.default]]
-host = "/home/riko/.local/bin/herdr"
-container = "/usr/local/bin/herdr"
-readonly = true
-
-# ---------------------------------------------------------------------------
-# pi extras (host config, read-only)
-# ---------------------------------------------------------------------------
-
-[[mounts.default]]
-host = "/home/riko/.agents"
-container = "/home/code/.agents"
-readonly = true
-
-[[mounts.default]]
-host = "/home/riko/.pi/agent/extensions"
-container = "/opt/pi/extensions"
-readonly = true

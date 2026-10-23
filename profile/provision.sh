@@ -11,12 +11,53 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 # ---------------------------------------------------------------------------
+# The sandbox user
+#
+# coi's base image creates "code"; the sandbox calls its user "lares", so the
+# name inside the container says what the sandbox is. The uid stays 1000:
+# coi-default, its sudo rule and everything installed for the user are built
+# around it, and only the name and the home change.
+# ---------------------------------------------------------------------------
+
+if id code >/dev/null 2>&1; then
+  usermod -l lares -d /home/lares -m code
+  groupmod -n lares code
+
+  # coi's passwordless sudo rule names the user.
+  echo "lares ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/lares
+  chown root:root /etc/sudoers.d/lares
+  chmod 0440 /etc/sudoers.d/lares
+  rm -f /etc/sudoers.d/code
+
+  # pi records where it installed itself before the rename.
+  manifest=/home/lares/.pi/agent/install/managed-install.json
+  [ -f "$manifest" ] && sed -i 's|/home/code|/home/lares|g' "$manifest"
+
+  # Absolute symlinks point at the old home: /usr/local/bin is where coi puts the
+  # agent launchers that have to stay on PATH, and the user's bin is where the
+  # installers left theirs.
+  for link in /usr/local/bin/* /home/lares/.local/bin/*; do
+    [ -L "$link" ] || continue
+
+    target=$(readlink "$link")
+    case "$target" in
+      /home/code/*) ln -sfn "/home/lares/${target#/home/code/}" "$link" ;;
+    esac
+  done
+fi
+
+# ---------------------------------------------------------------------------
 # Base terminal packages (dots "base_packages", minus what coi-default
 # already ships: bat, fd-find, fzf, ripgrep, tree, htop, jq, curl, git)
 # ---------------------------------------------------------------------------
 
-apt-get update -qq
-apt-get install -y --no-install-recommends \
+# The base image can still have a boot-time upgrade holding the dpkg lock when
+# this script starts; DPkg::Lock::Timeout makes apt-get wait for it instead of
+# failing the build outright.
+APT_GET="apt-get -o DPkg::Lock::Timeout=180"
+
+$APT_GET update -qq
+$APT_GET install -y --no-install-recommends \
   direnv \
   zsh
 
@@ -39,26 +80,26 @@ if ! command -v gitleaks >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# zsh + oh-my-zsh for the container user (dots base role)
+# zsh + oh-my-zsh for the sandbox user (dots base role)
 # ---------------------------------------------------------------------------
 
-usermod -s /usr/bin/zsh code
+usermod -s /usr/bin/zsh lares
 
-if [ ! -d /home/code/.oh-my-zsh ]; then
-  git clone --depth 1 --branch master https://github.com/ohmyzsh/ohmyzsh.git /home/code/.oh-my-zsh
+if [ ! -d /home/lares/.oh-my-zsh ]; then
+  git clone --depth 1 --branch master https://github.com/ohmyzsh/ohmyzsh.git /home/lares/.oh-my-zsh
 fi
-chown -R code:code /home/code/.oh-my-zsh
+chown -R lares:lares /home/lares/.oh-my-zsh
 
 # ---------------------------------------------------------------------------
 # mise runtimes (dots user_tools role + home/.config/mise/config.toml)
 #
 # mise itself is already in coi-default; only the declared runtimes are
-# downloaded here. The config file is symlinked from the dots repository at
-# runtime (lares link-dotfiles), and declares the same versions.
+# downloaded here. The config file is the sandbox user's, and declares the
+# same versions.
 # ---------------------------------------------------------------------------
 
 if command -v mise >/dev/null 2>&1; then
-  runuser -u code -- env HOME=/home/code \
+  runuser -u lares -- env HOME=/home/lares \
     mise use --global \
       python@3.14 \
       uv@latest \

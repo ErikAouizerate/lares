@@ -16,11 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// dotsHome is the home directory of the host dotfiles repository. Its files are
-// linked into the container home rather than copied, so an edit on the host is
-// picked up by the next shell inside.
-const dotsHome = "/home/riko/light-workspace/dots/home"
-
 // piAgentDir is where pi keeps its configuration, on the host and inside the
 // container.
 const piAgentDir = ".pi/agent"
@@ -32,33 +27,15 @@ const piAgentDir = ".pi/agent"
 // lares-token instead of carrying the secrets themselves.
 var piConfigFiles = []string{"settings.json", "AGENTS.md", "models.json"}
 
-// linkScript links the dotfiles into the container home. A file that is not a
-// symlink to the host is moved aside once, so that the host version wins
-// without losing what the container had.
-const linkScript = `
-set -e
-src="%s"
-link() {
-  rel="$1"; s="$src/$rel"; d="/home/code/$rel"
-  [ -e "$s" ] || return 0
-  mkdir -p "$(dirname "$d")"
-  if [ -L "$d" ] && [ "$(readlink "$d")" = "$s" ]; then return 0; fi
-  [ -e "$d" ] && [ ! -L "$d" ] && mv "$d" "$d.bak.$(date +%%Y%%m%%d-%%H%%M%%S)"
-  ln -sfn "$s" "$d"
-}
-link .zshrc
-link .zshenv
-link .config/mise/config.toml
-chown -h code:code /home/code/.zshrc /home/code/.zshenv /home/code/.config/mise/config.toml 2>/dev/null || true
-`
-
 func newPiCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:                "pi [args...]",
 		Short:              "Run pi in the current directory",
 		DisableFlagParsing: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			return enter(append([]string{"pi"}, args...))
+			// pi works on the repository it is started from, so a directory the
+			// sandbox cannot see is refused rather than replaced by another.
+			return enter(append([]string{"pi"}, args...), "")
 		},
 	}
 }
@@ -69,7 +46,7 @@ func newBashCmd() *cobra.Command {
 		Short:              "Run a login shell in the current directory",
 		DisableFlagParsing: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			return enter(append([]string{"bash", "-l"}, args...))
+			return enter(append([]string{"bash", "-l"}, args...), containerHome)
 		},
 	}
 }
@@ -80,13 +57,14 @@ func newHerdrCmd() *cobra.Command {
 		Short:              "Run herdr in the current directory",
 		DisableFlagParsing: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			return enter(append([]string{"herdr"}, args...))
+			return enter(append([]string{"herdr"}, args...), containerHome)
 		},
 	}
 }
 
 // newRunCmd runs any command in the prepared sandbox. It goes through the same
-// entry point as pi, bash and herdr, so `lares run -- pi` works like `lares pi`.
+// entry point as pi, bash and herdr, so the sandbox is prepared the same way and
+// an unmounted directory falls back to the container home.
 func newRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                   "run [--] command [args...]",
@@ -106,7 +84,7 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("no command given")
 			}
 
-			return enter(args)
+			return enter(args, containerHome)
 		},
 	}
 
@@ -243,6 +221,9 @@ container, and mounted right away when the sandbox is running. A repository is
 entered by mounting it: the mount mirrors the host path, which is what makes the
 working directory the same inside and outside.
 
+pi, bash, herdr and run never mount the current directory themselves, so this is
+the command that lets them start in it.
+
 Without a directory, the current one is mounted.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -280,49 +261,66 @@ func directoryArg(args []string) string {
 	return args[0]
 }
 
-// enter runs a command in the container, in the current directory, after
-// preparing the sandbox. It is the single entry point behind pi, bash, herdr
-// and run, so every command sees the same prepared sandbox.
-func enter(argv []string) error {
-	container, cwd, err := enterable()
+// enter runs a command in the container after preparing the sandbox. It is the
+// single entry point behind pi, bash, herdr and run, so every command sees the
+// same prepared sandbox.
+//
+// The current directory is never mounted here: `lares mount` does that, so that
+// entering a directory is a deliberate act. outside is where the command starts
+// when the container cannot see the current directory; an empty one means the
+// command has to be refused instead.
+func enter(argv []string, outside string) error {
+	container, err := sandbox()
+	if err != nil {
+		return err
+	}
+
+	dir, err := entryDir(container.Name, outside)
 	if err != nil {
 		return err
 	}
 
 	prepare(container.Name)
 
-	return runIn(container.Name, cwd, argv)
+	return runIn(container.Name, dir, argv)
 }
 
-// prepare makes the sandbox ready for any tool: the dotfiles, the pi mounts,
-// the secrets and the configuration pi reads. Every entry prepares the same
-// way, so `lares bash` followed by `pi` or `herdr` works like `lares pi`.
+// prepare makes the sandbox ready for any tool: the pi mounts, the secrets and
+// the configuration pi reads. Every entry prepares the same way, so `lares bash`
+// followed by `pi` or `herdr` works like `lares pi`.
 func prepare(name string) {
-	linkDotfiles(name)
 	linkPiExtras(name)
 	syncSandboxSecrets(name)
 	syncPiConfig(name)
 	syncPiCredentials(name)
 }
 
-// enterable returns the running container and the current directory, mounting
-// the directory in the sandbox when it cannot see it yet.
-func enterable() (coi.Container, string, error) {
-	container, err := sandbox()
-	if err != nil {
-		return coi.Container{}, "", err
-	}
-
+// entryDir is the directory a command starts in: the current one when the
+// container sees it, outside when it does not. An empty outside is for a command
+// that has nothing to do outside a mounted directory, so it is refused with the
+// command that would let it run.
+func entryDir(name, outside string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return coi.Container{}, "", err
+		return "", err
 	}
 
-	if err := ensureMounted(container.Name, cwd); err != nil {
-		return coi.Container{}, "", err
+	mounted, err := isMounted(name, cwd)
+	if err != nil {
+		return "", err
 	}
 
-	return container, cwd, nil
+	if mounted {
+		return cwd, nil
+	}
+
+	if outside == "" {
+		return "", fmt.Errorf("%s is not mounted in the sandbox\n  mount it first: lares mount", cwd)
+	}
+
+	fmt.Fprintf(os.Stderr, "lares: %s is not mounted in the sandbox, starting in %s\n", cwd, outside)
+
+	return outside, nil
 }
 
 // runIn runs argv in the container, in dir, and reports the status of the
@@ -358,6 +356,12 @@ func sandbox() (coi.Container, error) {
 	}
 
 	if !container.Running() {
+		// The mapping is needed at start and only then, so a container already
+		// running is entered whatever the host is set up like.
+		if err := requireUIDMapping(); err != nil {
+			return coi.Container{}, err
+		}
+
 		if err := coi.Start(container.Name); err != nil {
 			return coi.Container{}, err
 		}
@@ -370,6 +374,10 @@ func sandbox() (coi.Container, error) {
 // and the shell that opens is the confirmation that the image works.
 func create() (coi.Container, error) {
 	if _, err := installedProfile(); err != nil {
+		return coi.Container{}, err
+	}
+
+	if err := requireUIDMapping(); err != nil {
 		return coi.Container{}, err
 	}
 
@@ -413,23 +421,6 @@ func attachArgs(name, dir string) []string {
 	}
 }
 
-// ensureMounted mounts a directory the container cannot see, the way `lares
-// mount` does, so that entering a repository does not need that command first.
-// The declaration outlives the run: the directory comes back with the next
-// container.
-func ensureMounted(name, dir string) error {
-	mounted, err := isMounted(name, dir)
-	if err != nil {
-		return err
-	}
-
-	if mounted {
-		return nil
-	}
-
-	return mountDirectory(dir)
-}
-
 // isMounted reports whether dir is one of the host paths mounted in the
 // container, or lives inside one of them.
 func isMounted(name, dir string) (bool, error) {
@@ -447,23 +438,6 @@ func isMounted(name, dir string) (bool, error) {
 	return false, nil
 }
 
-// linkDotfiles links the files of the host dotfiles repository into the
-// container home, when that repository is mounted.
-func linkDotfiles(name string) {
-	if info, err := os.Stat(dotsHome); err != nil || !info.IsDir() {
-		return
-	}
-
-	mounted, err := isMounted(name, dotsHome)
-	if err != nil || !mounted {
-		return
-	}
-
-	if err := coi.Exec(name, "bash", "-c", fmt.Sprintf(linkScript, dotsHome)); err != nil {
-		fmt.Fprintf(os.Stderr, "lares: linking the dotfiles: %v\n", err)
-	}
-}
-
 // piLinkScript links the read-only pi mounts back into the agent directory.
 // They are mounted outside it because coi chowns ~/.pi/agent recursively at
 // setup, which fails on a read-only mount placed inside it.
@@ -472,15 +446,15 @@ func linkDotfiles(name string) {
 // credentials are resolved through lares-token.
 const piLinkScript = `
 set -e
-dir=/home/code/.pi/agent
+dir=%s/.pi/agent
 mkdir -p "$dir"
 link() {
   target="$1"; link_path="$2"
   [ -e "$target" ] || return 0
   if [ -L "$link_path" ] && [ "$(readlink "$link_path")" = "$target" ]; then return 0; fi
-  [ -e "$link_path" ] && [ ! -L "$link_path" ] && mv "$link_path" "$link_path.bak.$(date +%Y%m%d-%H%M%S)"
+  [ -e "$link_path" ] && [ ! -L "$link_path" ] && mv "$link_path" "$link_path.bak.$(date +%%Y%%m%%d-%%H%%M%%S)"
   ln -sfn "$target" "$link_path"
-  chown -h code:code "$link_path"
+  chown -h %s:%s "$link_path"
 }
 link /opt/pi/extensions "$dir/extensions"
 `
@@ -488,7 +462,9 @@ link /opt/pi/extensions "$dir/extensions"
 // linkPiExtras wires the pi files the profile mounts under /opt into the agent
 // directory, where pi expects them.
 func linkPiExtras(name string) {
-	if err := coi.Exec(name, "bash", "-c", piLinkScript); err != nil {
+	script := fmt.Sprintf(piLinkScript, containerHome, containerUserName, containerUserName)
+
+	if err := coi.Exec(name, "bash", "-c", script); err != nil {
 		fmt.Fprintf(os.Stderr, "lares: linking the pi configuration: %v\n", err)
 	}
 }

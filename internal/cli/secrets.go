@@ -18,7 +18,7 @@ import (
 // tokens do not sit in the environment of every process in the container.
 const (
 	secretsFileName      = "secrets.env"
-	containerSecretsPath = "/home/code/.config/lares/secrets"
+	containerSecretsPath = containerHome + "/.config/lares/secrets"
 	containerTokenHelper = "/usr/local/bin/lares-token"
 
 	// obsoleteMCPMountPath is where older profiles mounted the host
@@ -162,7 +162,7 @@ func syncSecrets(name string) {
 	}
 
 	containerDir := path.Dir(containerSecretsPath)
-	if err := coi.Exec(name, "install", "-d", "-m", "0700", "-o", "code", "-g", "code", containerDir); err != nil {
+	if err := coi.Exec(name, "install", "-d", "-m", "0700", "-o", containerUserName, "-g", containerUserName, containerDir); err != nil {
 		fmt.Fprintf(os.Stderr, "lares: preparing %s in the sandbox: %v\n", containerDir, err)
 
 		return
@@ -174,7 +174,7 @@ func syncSecrets(name string) {
 		return
 	}
 
-	if err := coi.Exec(name, "chown", "code:code", containerSecretsPath); err != nil {
+	if err := coi.Exec(name, "chown", containerUserName+":"+containerUserName, containerSecretsPath); err != nil {
 		fmt.Fprintf(os.Stderr, "lares: setting the owner of the secrets file: %v\n", err)
 	}
 
@@ -276,7 +276,7 @@ func pushData(name, remote string, data []byte, mode os.FileMode) error {
 		return err
 	}
 
-	if err := coi.Exec(name, "chown", "code:code", remote); err != nil {
+	if err := coi.Exec(name, "chown", containerUserName+":"+containerUserName, remote); err != nil {
 		return err
 	}
 

@@ -13,11 +13,17 @@ import (
 // workspace directory. One name means one sandbox.
 const sandboxName = "lares"
 
-// The account coi creates inside the container, and the home it must be told
-// about because the exec API does not set it.
+// Version is the release this binary was built from, set by the command before
+// the command line runs. It is what `lares --version` reports.
+var Version = "dev"
+
+// The sandbox user inside the container. The image creates it (provision.sh
+// renames coi's "code"), the profile tells coi its name with
+// [incus] code_user, and the home travels with it.
 const (
-	containerUser = 1000
-	containerHome = "/home/code"
+	containerUser     = 1000
+	containerUserName = "lares"
+	containerHome     = "/home/lares"
 )
 
 // exitCode carries the status of a command lares ran, so that the shell sees
@@ -56,6 +62,10 @@ container at their host path, so the working directory is the same inside and
 outside. lares installs the coi profile declaring that sandbox, starts the
 container, and runs the tool in it.
 
+A directory is entered once it is mounted: nothing is mounted behind your back,
+lares mount does it. Outside a mounted directory pi refuses to start, while bash,
+herdr and run open in the container home.
+
   lares pi           pi in the current directory
   lares bash         a shell in the current directory
   lares herdr        herdr in the current directory
@@ -73,6 +83,7 @@ container, and runs the tool in it.
 `,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Version:       Version,
 	}
 
 	root.AddCommand(
